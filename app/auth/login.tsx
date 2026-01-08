@@ -1,7 +1,7 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import { Link } from "expo-router";
+import { Link, useRouter } from "expo-router";
 import React, { useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Alert, Pressable, StyleSheet, View } from "react-native";
 
 import {
   AuthGoogleButton,
@@ -11,17 +11,63 @@ import { AuthScreenShell } from "@/components/auth/auth-screen-shell";
 import { AuthTextField } from "@/components/auth/auth-text-field";
 import { ThemedText } from "@/components/themed-text";
 import { useThemeColor } from "@/hooks/use-theme-color";
+import { ensureProfileFromUserMetadata } from "@/lib/profiles";
+import { supabase } from "@/lib/supabase";
 
 export default function LoginScreen() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const text = "#000000";
   const muted = "#4B5563";
   const primary = useThemeColor({ light: "#F8E759", dark: "#F8E759" }, "text");
   const linkYellow = "#D6C94A";
   const divider = useThemeColor({ light: "#D1D5DB", dark: "#4B5563" }, "text");
+
+  async function onLogin() {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      Alert.alert("Missing details", "Please enter email and password.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password,
+      });
+
+      if (error) {
+        Alert.alert("Login failed", error.message);
+        return;
+      }
+
+      // If email-confirmation is enabled, signup may have stored details in metadata.
+      // Ensure `profiles` row exists before navigating.
+      const { data: userData, error: userError } =
+        await supabase.auth.getUser();
+      if (!userError && userData.user) {
+        try {
+          await ensureProfileFromUserMetadata(
+            userData.user.id,
+            (userData.user.user_metadata as Record<string, unknown> | null) ??
+              null
+          );
+        } catch (e: any) {
+          // Don't block login; surface the problem so it's debuggable.
+          Alert.alert("Profile sync failed", e?.message ?? String(e));
+        }
+      }
+
+      router.replace("/profile");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
   return (
     <AuthScreenShell imageSource={require("@/assets/images/auth_bg.png")}>
@@ -96,7 +142,10 @@ export default function LoginScreen() {
           </Pressable>
         </View>
 
-        <AuthPrimaryButton label="Login" onPress={() => {}} />
+        <AuthPrimaryButton
+          label={isSubmitting ? "Logging in..." : "Login"}
+          onPress={isSubmitting ? () => {} : onLogin}
+        />
 
         <View style={styles.divider}>
           <View style={[styles.dividerLine, { backgroundColor: divider }]} />
@@ -109,7 +158,7 @@ export default function LoginScreen() {
         <AuthGoogleButton
           label="Google"
           onPress={() => {}}
-          iconUri="https://lh3.googleusercontent.com/aida-public/AB6AXuCLNmdWoKchbojLiPqkChIUBr3aKmgvtlKw0aKFwQWIUF1BD6MSG5EldIGNSnFh61unVaNRbx_O-wpEpyz_K9k3NC44DMOU8Ui-spstD7-uwCUQJcCYIDUilDhuIqjYpvNsN2kZZrr63Lp_brW6CkJWtI6mOWAQ32YHOXvb1xxz19DVOfrPXVuTy0VsixotSDR-jQtyBVVnSq1UjvS19zM_QkiKBQAT27aaKcpILI-jE7gl1yLScTmy7pZhKPf9Y8y8rHtzN4MlP1CZ"
+          iconSource={require("@/assets/images/google.png")}
         />
 
         <View style={styles.footer}>

@@ -1,13 +1,10 @@
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
-import { SplashOverlay } from "@/components/splash-overlay";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-
-let hasShownSplashOverlay = false;
 
 function LandingContent() {
   const router = useRouter();
@@ -57,29 +54,10 @@ function LandingContent() {
 }
 
 export default function LandingScreen() {
-  const [showSplash, setShowSplash] = useState(() => !hasShownSplashOverlay);
-
-  useEffect(() => {
-    hasShownSplashOverlay = true;
-  }, []);
-
-  return (
-    <View style={styles.root}>
-      <LandingContent />
-      {showSplash ? (
-        <SplashOverlay
-          reveal={<LandingContent />}
-          onFinished={() => setShowSplash(false)}
-        />
-      ) : null}
-    </View>
-  );
+  return <LandingContent />;
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
   container: {
     flex: 1,
   },

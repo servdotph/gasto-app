@@ -1,6 +1,6 @@
-import { Link } from "expo-router";
+import { Link, useRouter } from "expo-router";
 import React, { useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { Alert, StyleSheet, View } from "react-native";
 
 import {
   AuthGoogleButton,
@@ -9,20 +9,82 @@ import {
 import { AuthScreenShell } from "@/components/auth/auth-screen-shell";
 import { AuthTextField } from "@/components/auth/auth-text-field";
 import { ThemedText } from "@/components/themed-text";
-import { useThemeColor } from "@/hooks/use-theme-color";
+import { upsertProfileById } from "@/lib/profiles";
+import { supabase } from "@/lib/supabase";
 
 export default function SignupScreen() {
+  const router = useRouter();
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const text = "#000000";
   const muted = "#4B5563";
-  const primary = useThemeColor({ light: "#F8E759", dark: "#F8E759" }, "text");
   const linkYellow = "#D6C94A";
+
+  async function onSignup() {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password || !confirmPassword) {
+      Alert.alert("Missing details", "Please fill email and password fields.");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      Alert.alert("Password mismatch", "Passwords do not match.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: trimmedEmail,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+            phone,
+            address,
+          },
+        },
+      });
+
+      if (error) {
+        Alert.alert("Signup failed", error.message);
+        return;
+      }
+
+      if (data.session) {
+        // Store additional details in the profiles table.
+        // Schema: profiles.id = auth.uid()
+        const userId = data.session.user.id;
+
+        try {
+          await upsertProfileById(userId, {
+            full_name: fullName || null,
+            phone: phone || null,
+            address: address || null,
+          });
+        } catch (e: any) {
+          Alert.alert("Profile save failed", e?.message ?? String(e));
+        }
+
+        router.replace("/profile");
+        return;
+      }
+
+      Alert.alert(
+        "Account created",
+        "Please check your email to confirm your account, then log in."
+      );
+      router.replace("/auth/login");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
   return (
     <AuthScreenShell imageSource={require("@/assets/images/auth_bg.png")}>
@@ -107,7 +169,10 @@ export default function SignupScreen() {
           density="compact"
         />
 
-        <AuthPrimaryButton label="Register" onPress={() => {}} />
+        <AuthPrimaryButton
+          label={isSubmitting ? "Registering..." : "Register"}
+          onPress={isSubmitting ? () => {} : onSignup}
+        />
 
         <View style={styles.orRow}>
           <View style={styles.orLine} />
@@ -118,7 +183,7 @@ export default function SignupScreen() {
         <AuthGoogleButton
           label="Google"
           onPress={() => {}}
-          iconUri="https://lh3.googleusercontent.com/aida-public/AB6AXuBOeh4q6ET9FtESwbleQ_TJxsxC9iy72bgLReanKQH4qmlCBAa7Nd8vPJKIjdkvPPZhsK_tP2Kyy_9TErkYU2UiyYsmNy0Bj6O5lD4gLyrcOPEYvUtTpN6Styb_ijUTNsK-J1imy7fYwBIxCjlMRpMf3HdPtN-C0ZwzsmC04bfItpw-7LcPdX0fFVx0vSpxeMLmtlkqBDxXRh_WB8Q4GVIC4u7PcHJrD96GaQFD4ZogV4KksTkVaXGzvUKlP18XOEfeE1cQ8I86BoLJ"
+          iconSource={require("@/assets/images/google.png")}
         />
 
         <View style={styles.footer}>

@@ -1,4 +1,4 @@
-import { Image } from "expo-image";
+import { Image, type ImageSource } from "expo-image";
 import React from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
@@ -28,13 +28,13 @@ export function AuthPrimaryButton({ label, onPress }: PrimaryButtonProps) {
 type SocialButtonProps = {
   label: string;
   onPress: () => void;
-  iconUri: string;
+  iconSource: ImageSource;
 };
 
 export function AuthGoogleButton({
   label,
   onPress,
-  iconUri,
+  iconSource,
 }: SocialButtonProps) {
   const background = "#000000";
   const text = "#FFFFFF";
@@ -49,7 +49,7 @@ export function AuthGoogleButton({
     >
       <View style={styles.socialRow}>
         <Image
-          source={{ uri: iconUri }}
+          source={iconSource}
           style={styles.socialIcon}
           contentFit="contain"
           transition={0}
