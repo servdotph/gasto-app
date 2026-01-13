@@ -1,14 +1,12 @@
 export const EXPENSE_CATEGORIES = [
   "Food",
-  "Travel",
-  "Shopping",
-  "Bills",
   "Transport",
+  "Utilities",
+  "School",
   "Entertainment",
+  "Shopping",
   "Health",
-  "Education",
-  "Groceries",
-  "Other",
+  "Others",
 ] as const;
 
 export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number];

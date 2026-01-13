@@ -165,7 +165,9 @@ export default function DashboardScreen() {
   const todayTotal = useMemo(() => {
     const todayKey = dateKeyLocal(new Date());
     return expenseRows
-      .filter((e) => dateKeyLocal(parseISOTimestampLocal(e.created_at)) === todayKey)
+      .filter(
+        (e) => dateKeyLocal(parseISOTimestampLocal(e.created_at)) === todayKey
+      )
       .reduce((sum, e) => sum + (Number.isFinite(e.amount) ? e.amount : 0), 0);
   }, [expenseRows]);
 
@@ -309,7 +311,10 @@ export default function DashboardScreen() {
 
                 {weekCategoryStats.rows.length === 0 ? (
                   <ThemedText
-                    style={[styles.bodyText, { color: themeColors.textSecondary }]}
+                    style={[
+                      styles.bodyText,
+                      { color: themeColors.textSecondary },
+                    ]}
                   >
                     No expenses yet this week.
                   </ThemedText>
@@ -404,7 +409,9 @@ export default function DashboardScreen() {
                     style={{ transform: [{ rotate: "-45deg" }] }}
                   />
                   <ThemedText style={styles.filterText}>
-                    {categoryFilter === "ALL" ? "All Categories" : categoryFilter}
+                    {categoryFilter === "ALL"
+                      ? "All Categories"
+                      : categoryFilter}
                   </ThemedText>
                   <MaterialIcons
                     name="expand-more"
@@ -417,7 +424,10 @@ export default function DashboardScreen() {
               <View style={styles.recentList}>
                 {filteredRecent.length === 0 ? (
                   <ThemedText
-                    style={[styles.bodyText, { color: themeColors.textSecondary }]}
+                    style={[
+                      styles.bodyText,
+                      { color: themeColors.textSecondary },
+                    ]}
                   >
                     No matching expenses.
                   </ThemedText>
@@ -463,7 +473,11 @@ function CategoryRow({
     <View style={styles.catBlock}>
       <View style={styles.catTopRow}>
         <View style={styles.catLeft}>
-          <MaterialIcons name={accent.icon} size={14} color={accent.iconColor} />
+          <MaterialIcons
+            name={accent.icon}
+            size={14}
+            color={accent.iconColor}
+          />
           <ThemedText style={[styles.catLabel, { color: theme.textSecondary }]}>
             {label}
           </ThemedText>
@@ -498,10 +512,10 @@ function RecentExpenseRow({ item }: { item: ExpenseRow }) {
   const categoryLabel = normalizeCategoryLabel(item.category);
   const accent = getCategoryAccent(categoryLabel);
 
-  const bg =
-    colorScheme === "dark" ? accent.darkBg : accent.lightBg;
+  const bg = colorScheme === "dark" ? accent.darkBg : accent.lightBg;
   const fg = colorScheme === "dark" ? accent.darkFg : accent.lightFg;
-  const chipBg = colorScheme === "dark" ? accent.chipDarkBg : accent.chipLightBg;
+  const chipBg =
+    colorScheme === "dark" ? accent.chipDarkBg : accent.chipLightBg;
   const chipText =
     colorScheme === "dark" ? accent.chipDarkText : accent.chipLightText;
 
@@ -534,9 +548,14 @@ function RecentExpenseRow({ item }: { item: ExpenseRow }) {
           {formatCurrencyPHP(item.amount)}
         </ThemedText>
         <Pressable
-          onPress={() => {
-            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-            void deleteExpense(item.id);
+          onPress={async () => {
+            LayoutAnimation.configureNext(
+              LayoutAnimation.Presets.easeInEaseOut
+            );
+            const result = await deleteExpense(item.id);
+            if (!result.ok) {
+              console.error("Delete failed:", result.error);
+            }
           }}
           style={({ pressed }) => [
             { opacity: pressed ? 0.7 : 0.4, marginTop: 6 },
@@ -627,9 +646,10 @@ function normalizeCategoryLabel(category: string | null) {
 }
 
 function dateKeyLocal(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
-    date.getDate()
-  ).padStart(2, "0")}`;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function startOfDayLocal(date: Date) {
@@ -637,7 +657,15 @@ function startOfDayLocal(date: Date) {
 }
 
 function endOfDayLocal(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    23,
+    59,
+    59,
+    999
+  );
 }
 
 function startOfWeekLocal(date: Date, weekStartsOn: 0 | 1) {
@@ -651,36 +679,6 @@ function startOfWeekLocal(date: Date, weekStartsOn: 0 | 1) {
 
 function getCategoryAccent(category: string) {
   const key = category.trim().toLowerCase();
-  if (key === "travel") {
-    return {
-      icon: "flight" as const,
-      iconColor: "#60A5FA",
-      fillColor: "#818CF8",
-      lightBg: "#E0E7FF",
-      lightFg: "#6366F1",
-      darkBg: "rgba(99,102,241,0.2)",
-      darkFg: "#C7D2FE",
-      chipLightBg: "#C7D2FE",
-      chipLightText: "#3730A3",
-      chipDarkBg: "#312E81",
-      chipDarkText: "#E0E7FF",
-    };
-  }
-  if (key === "shopping") {
-    return {
-      icon: "shopping-bag" as const,
-      iconColor: "#EC4899",
-      fillColor: "#F87171",
-      lightBg: "#FEE2E2",
-      lightFg: "#EF4444",
-      darkBg: "rgba(239,68,68,0.2)",
-      darkFg: "#FECACA",
-      chipLightBg: "#FECACA",
-      chipLightText: "#7F1D1D",
-      chipDarkBg: "#7F1D1D",
-      chipDarkText: "#FEE2E2",
-    };
-  }
   if (key === "food" || key === "groceries") {
     return {
       icon: "restaurant" as const,
@@ -696,31 +694,107 @@ function getCategoryAccent(category: string) {
       chipDarkText: "#FEF3C7",
     };
   }
-  if (key === "bills") {
+  if (key === "transport") {
     return {
-      icon: "receipt" as const,
+      icon: "directions-car" as const,
+      iconColor: "#6366F1",
+      fillColor: "#A5B4FC",
+      lightBg: "#E0E7FF",
+      lightFg: "#6366F1",
+      darkBg: "rgba(99,102,241,0.2)",
+      darkFg: "#C7D2FE",
+      chipLightBg: "#A5B4FC",
+      chipLightText: "#312E81",
+      chipDarkBg: "#312E81",
+      chipDarkText: "#E0E7FF",
+    };
+  }
+  if (key === "utilities") {
+    return {
+      icon: "lightbulb" as const,
+      iconColor: "#3B82F6",
+      fillColor: "#93C5FD",
+      lightBg: "#DBEAFE",
+      lightFg: "#2563EB",
+      darkBg: "rgba(59,130,246,0.2)",
+      darkFg: "#93C5FD",
+      chipLightBg: "#93C5FD",
+      chipLightText: "#1E40AF",
+      chipDarkBg: "#1E40AF",
+      chipDarkText: "#DBEAFE",
+    };
+  }
+  if (key === "school") {
+    return {
+      icon: "menu-book" as const,
+      iconColor: "#EC4899",
+      fillColor: "#F9A8D4",
+      lightBg: "#FCE7F3",
+      lightFg: "#DB2777",
+      darkBg: "rgba(236,72,153,0.2)",
+      darkFg: "#F9A8D4",
+      chipLightBg: "#F9A8D4",
+      chipLightText: "#9D174D",
+      chipDarkBg: "#9D174D",
+      chipDarkText: "#FCE7F3",
+    };
+  }
+  if (key === "entertainment") {
+    return {
+      icon: "movie" as const,
       iconColor: "#10B981",
-      fillColor: "#10B981",
+      fillColor: "#6EE7B7",
       lightBg: "#D1FAE5",
       lightFg: "#059669",
       darkBg: "rgba(16,185,129,0.2)",
       darkFg: "#A7F3D0",
-      chipLightBg: "#A7F3D0",
+      chipLightBg: "#6EE7B7",
       chipLightText: "#065F46",
-      chipDarkBg: "#064E3B",
+      chipDarkBg: "#065F46",
       chipDarkText: "#D1FAE5",
     };
   }
+  if (key === "shopping") {
+    return {
+      icon: "shopping-bag" as const,
+      iconColor: "#EC4899",
+      fillColor: "#FCA5A5",
+      lightBg: "#FBCFE8",
+      lightFg: "#EF4444",
+      darkBg: "rgba(239,68,68,0.2)",
+      darkFg: "#FECACA",
+      chipLightBg: "#FCA5A5",
+      chipLightText: "#7F1D1D",
+      chipDarkBg: "#7F1D1D",
+      chipDarkText: "#FBCFE8",
+    };
+  }
+  if (key === "health") {
+    return {
+      icon: "healing" as const,
+      iconColor: "#14B8A6",
+      fillColor: "#5EEAD4",
+      lightBg: "#CCFBF1",
+      lightFg: "#0D9488",
+      darkBg: "rgba(20,184,166,0.2)",
+      darkFg: "#5EEAD4",
+      chipLightBg: "#5EEAD4",
+      chipLightText: "#115E59",
+      chipDarkBg: "#115E59",
+      chipDarkText: "#CCFBF1",
+    };
+  }
+  // Others / default
   return {
     icon: "label" as const,
     iconColor: "#94A3B8",
-    fillColor: "#94A3B8",
+    fillColor: "#9CA3AF",
     lightBg: "#E5E7EB",
     lightFg: "#475569",
     darkBg: "rgba(148,163,184,0.18)",
     darkFg: "#CBD5E1",
-    chipLightBg: "#E5E7EB",
-    chipLightText: "#334155",
+    chipLightBg: "#9CA3AF",
+    chipLightText: "#1F2937",
     chipDarkBg: "#334155",
     chipDarkText: "#E2E8F0",
   };

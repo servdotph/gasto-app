@@ -6,13 +6,14 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { BOTTOM_NAVBAR_HEIGHT } from "@/components/bottom-navbar";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
+import { EXPENSE_CATEGORIES } from "@/constants/expense-categories";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import {
   formatCurrencyPHP,
-  getAddedExpenses,
+  getExpenseRows,
   subscribeAddedExpenses,
-  type AddedExpense,
+  type ExpenseRow,
 } from "@/lib/expenses-store";
 import { supabase } from "@/lib/supabase";
 
@@ -21,17 +22,21 @@ type Mode = "weekly" | "monthly";
 type ExpenseItem = {
   id: string;
   title: string;
-  category: "Travel" | "Shopping";
+  category: string;
   dateLabel: string;
   amountLabel: string;
+  amount: number;
   emoji: string;
-  colorKey: "indigo" | "pink";
+  bgColor: string;
+  chipBg: string;
+  chipText: string;
 };
 
 type DaySection = {
   key: string;
   dayLabel: string;
   dateLabel: string;
+  date: Date;
   totalLabel: string;
   items: ExpenseItem[];
 };
@@ -44,16 +49,190 @@ type MonthlyCategory = {
   amountLabel: string;
   pctLabel: string;
   countLabel: string;
+  total: number;
 };
+
+// Category styling map
+const CATEGORY_STYLES: Record<
+  string,
+  { emoji: string; bgColor: string; chipBg: string; chipText: string }
+> = {
+  Food: {
+    emoji: "🍔",
+    bgColor: "#FEF3C7",
+    chipBg: "#FDE68A",
+    chipText: "#92400E",
+  },
+  Transport: {
+    emoji: "🚗",
+    bgColor: "#E0E7FF",
+    chipBg: "#A5B4FC",
+    chipText: "#312E81",
+  },
+  Utilities: {
+    emoji: "💡",
+    bgColor: "#DBEAFE",
+    chipBg: "#93C5FD",
+    chipText: "#1E40AF",
+  },
+  School: {
+    emoji: "📚",
+    bgColor: "#FCE7F3",
+    chipBg: "#F9A8D4",
+    chipText: "#9D174D",
+  },
+  Entertainment: {
+    emoji: "🎬",
+    bgColor: "#D1FAE5",
+    chipBg: "#6EE7B7",
+    chipText: "#065F46",
+  },
+  Shopping: {
+    emoji: "🛍️",
+    bgColor: "#FBCFE8",
+    chipBg: "#FCA5A5",
+    chipText: "#7F1D1D",
+  },
+  Health: {
+    emoji: "💊",
+    bgColor: "#CCFBF1",
+    chipBg: "#5EEAD4",
+    chipText: "#115E59",
+  },
+  Others: {
+    emoji: "📦",
+    bgColor: "#E5E7EB",
+    chipBg: "#9CA3AF",
+    chipText: "#1F2937",
+  },
+};
+
+const DEFAULT_STYLE = {
+  emoji: "💰",
+  bgColor: "#E5E7EB",
+  chipBg: "#9CA3AF",
+  chipText: "#1F2937",
+};
+
+function getCategoryStyle(category: string | null) {
+  if (!category) return DEFAULT_STYLE;
+  return CATEGORY_STYLES[category] ?? DEFAULT_STYLE;
+}
+
+function formatShortDate(date: Date): string {
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+  return `${months[date.getMonth()]} ${date.getDate()}`;
+}
+
+function getWeekDays(weekOffset: number): Date[] {
+  const now = new Date();
+  const startOfWeek = new Date(now);
+  const day = now.getDay();
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+  startOfWeek.setDate(diff + weekOffset * 7);
+  startOfWeek.setHours(0, 0, 0, 0);
+
+  const days: Date[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(startOfWeek);
+    d.setDate(startOfWeek.getDate() + i);
+    days.push(d);
+  }
+  return days;
+}
+
+function getMonthRange(monthOffset: number): { start: Date; end: Date } {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + monthOffset + 1, 0);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+}
+
+function formatWeekLabel(days: Date[]): string {
+  if (days.length === 0) return "";
+  const first = days[0];
+  const last = days[days.length - 1];
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
+  if (first.getMonth() === last.getMonth()) {
+    return `${
+      months[first.getMonth()]
+    } ${first.getDate()} - ${last.getDate()}, ${first.getFullYear()}`;
+  }
+  return `${months[first.getMonth()]} ${first.getDate()} - ${
+    months[last.getMonth()]
+  } ${last.getDate()}, ${first.getFullYear()}`;
+}
+
+function formatMonthLabel(date: Date): string {
+  const months = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+  return `${months[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+function getDayLabel(date: Date): string {
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  return days[date.getDay()];
+}
+
+function isSameDay(d1: Date, d2: Date): boolean {
+  return (
+    d1.getFullYear() === d2.getFullYear() &&
+    d1.getMonth() === d2.getMonth() &&
+    d1.getDate() === d2.getDate()
+  );
+}
 
 export default function ExpensesScreen() {
   const colorScheme = useColorScheme() ?? "light";
   const themeColors = Colors[colorScheme];
 
   const [mode, setMode] = useState<Mode>("weekly");
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [monthOffset, setMonthOffset] = useState(0);
 
   const [authed, setAuthed] = useState<boolean | null>(null);
-  React.useEffect(() => {
+  const [expenseRows, setExpenseRows] = useState<ExpenseRow[]>([]);
+
+  useEffect(() => {
     let mounted = true;
     supabase.auth.getUser().then(({ data, error }) => {
       if (!mounted) return;
@@ -64,160 +243,106 @@ export default function ExpensesScreen() {
     };
   }, []);
 
-  const weekLabel = "First Week of Jan, 2026";
-  const monthLabel = "January 2026";
-
-  const baseWeeklySections: DaySection[] = useMemo(
-    () => [
-      {
-        key: "mon",
-        dayLabel: "Mon",
-        dateLabel: "Jan 5",
-        totalLabel: "₱46.00",
-        items: [
-          {
-            id: "mon-1",
-            title: "Picnic",
-            category: "Travel",
-            dateLabel: "Jan 4",
-            amountLabel: "₱23.00",
-            emoji: "✈️",
-            colorKey: "indigo",
-          },
-          {
-            id: "mon-2",
-            title: "Clothes",
-            category: "Shopping",
-            dateLabel: "Jan 4",
-            amountLabel: "₱23.00",
-            emoji: "🛍️",
-            colorKey: "pink",
-          },
-        ],
-      },
-      {
-        key: "tue",
-        dayLabel: "Tue",
-        dateLabel: "Jan 6",
-        totalLabel: "₱0.00",
-        items: [],
-      },
-      {
-        key: "wed",
-        dayLabel: "Wed",
-        dateLabel: "Jan 7",
-        totalLabel: "₱0.00",
-        items: [],
-      },
-      {
-        key: "thu",
-        dayLabel: "Thur",
-        dateLabel: "Jan 8",
-        totalLabel: "₱0.00",
-        items: [],
-      },
-      {
-        key: "fri",
-        dayLabel: "Fri",
-        dateLabel: "Jan 9",
-        totalLabel: "₱0.00",
-        items: [],
-      },
-    ],
-    []
-  );
-
-  const [added, setAdded] = useState<AddedExpense[]>([]);
   useEffect(() => {
-    setAdded(getAddedExpenses());
+    setExpenseRows(getExpenseRows());
     return subscribeAddedExpenses(() => {
-      setAdded(getAddedExpenses());
+      setExpenseRows(getExpenseRows());
     });
   }, []);
 
+  // Weekly data
+  const weekDays = useMemo(() => getWeekDays(weekOffset), [weekOffset]);
+  const weekLabel = useMemo(() => formatWeekLabel(weekDays), [weekDays]);
+
   const weeklySections: DaySection[] = useMemo(() => {
-    if (added.length === 0) return baseWeeklySections;
+    return weekDays.map((day) => {
+      const dayExpenses = expenseRows.filter((expense) => {
+        const expenseDate = new Date(expense.created_at);
+        return isSameDay(expenseDate, day);
+      });
 
-    // Minimal integration: prepend added expenses into the first day section.
-    const first = baseWeeklySections[0];
-    if (!first) return baseWeeklySections;
+      const items: ExpenseItem[] = dayExpenses.map((expense) => {
+        const style = getCategoryStyle(expense.category);
+        return {
+          id: expense.id,
+          title: expense.description,
+          category: expense.category || "Others",
+          dateLabel: formatShortDate(new Date(expense.created_at)),
+          amountLabel: formatCurrencyPHP(expense.amount),
+          amount: expense.amount,
+          emoji: style.emoji,
+          bgColor: style.bgColor,
+          chipBg: style.chipBg,
+          chipText: style.chipText,
+        };
+      });
 
-    const addedItems: ExpenseItem[] = added.map((e) => ({
-      id: e.id,
-      title: e.description,
-      category: "Shopping",
-      dateLabel: e.dateLabel,
-      amountLabel: formatCurrencyPHP(e.amount),
-      emoji: "🛍️",
-      colorKey: "pink",
-    }));
+      const total = items.reduce((sum, item) => sum + item.amount, 0);
 
-    const mergedFirstItems = [...addedItems, ...first.items];
-    const mergedTotal = mergedFirstItems.reduce((sum, item) => {
-      const normalized = item.amountLabel.replace(/[^0-9.]/g, "");
-      const value = Number.parseFloat(normalized);
-      return sum + (Number.isFinite(value) ? value : 0);
-    }, 0);
+      return {
+        key: day.toISOString(),
+        dayLabel: getDayLabel(day),
+        dateLabel: formatShortDate(day),
+        date: day,
+        totalLabel: formatCurrencyPHP(total),
+        items,
+      };
+    });
+  }, [weekDays, expenseRows]);
 
-    const mergedFirst: DaySection = {
-      ...first,
-      items: mergedFirstItems,
-      totalLabel: formatCurrencyPHP(mergedTotal),
-    };
-
-    return [mergedFirst, ...baseWeeklySections.slice(1)];
-  }, [added, baseWeeklySections]);
-
-  const monthlyCategories: MonthlyCategory[] = useMemo(
-    () => [
-      {
-        key: "travel",
-        label: "Travel",
-        emoji: "✈️",
-        bgColor: "#A5A6F6",
-        amountLabel: "₱23.00",
-        pctLabel: "38%",
-        countLabel: "1 transactions",
-      },
-      {
-        key: "shopping",
-        label: "Shopping",
-        emoji: "🛍️",
-        bgColor: "#F68D99",
-        amountLabel: "₱23.00",
-        pctLabel: "38%",
-        countLabel: "1 transactions",
-      },
-      {
-        key: "transpo",
-        label: "Transpo",
-        emoji: "🚗",
-        bgColor: "#833471",
-        amountLabel: "₱23.00",
-        pctLabel: "38%",
-        countLabel: "1 transactions",
-      },
-      {
-        key: "food",
-        label: "Food",
-        emoji: "🍔",
-        bgColor: "#F7B731",
-        amountLabel: "₱23.00",
-        pctLabel: "38%",
-        countLabel: "1 transactions",
-      },
-      {
-        key: "entertainment",
-        label: "Entertainment",
-        emoji: "🎬",
-        bgColor: "#20BF6B",
-        amountLabel: "₱23.00",
-        pctLabel: "38%",
-        countLabel: "1 transactions",
-      },
-    ],
-    []
+  // Monthly data
+  const monthRange = useMemo(() => getMonthRange(monthOffset), [monthOffset]);
+  const monthLabel = useMemo(
+    () => formatMonthLabel(monthRange.start),
+    [monthRange]
   );
+
+  const monthlyExpenses = useMemo(() => {
+    return expenseRows.filter((expense) => {
+      const expenseDate = new Date(expense.created_at);
+      return expenseDate >= monthRange.start && expenseDate <= monthRange.end;
+    });
+  }, [expenseRows, monthRange]);
+
+  const monthlyTotal = useMemo(() => {
+    return monthlyExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  }, [monthlyExpenses]);
+
+  const monthlyCategories: MonthlyCategory[] = useMemo(() => {
+    const categoryTotals: Record<string, { total: number; count: number }> = {};
+
+    for (const cat of EXPENSE_CATEGORIES) {
+      categoryTotals[cat] = { total: 0, count: 0 };
+    }
+
+    for (const expense of monthlyExpenses) {
+      const cat = expense.category || "Others";
+      if (!categoryTotals[cat]) {
+        categoryTotals[cat] = { total: 0, count: 0 };
+      }
+      categoryTotals[cat].total += expense.amount;
+      categoryTotals[cat].count += 1;
+    }
+
+    return Object.entries(categoryTotals)
+      .filter(([_, data]) => data.count > 0)
+      .map(([cat, data]) => {
+        const style = getCategoryStyle(cat);
+        const pct =
+          monthlyTotal > 0 ? Math.round((data.total / monthlyTotal) * 100) : 0;
+        return {
+          key: cat,
+          label: cat,
+          emoji: style.emoji,
+          bgColor: style.bgColor,
+          amountLabel: formatCurrencyPHP(data.total),
+          pctLabel: `${pct}%`,
+          countLabel: `${data.count} transaction${data.count !== 1 ? "s" : ""}`,
+          total: data.total,
+        };
+      })
+      .sort((a, b) => b.total - a.total);
+  }, [monthlyExpenses, monthlyTotal]);
 
   if (authed === false) return <Redirect href="/landing" />;
 
@@ -299,7 +424,7 @@ export default function ExpensesScreen() {
               ]}
             >
               <Pressable
-                disabled
+                onPress={() => setWeekOffset((prev) => prev - 1)}
                 style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
               >
                 <MaterialIcons
@@ -310,8 +435,11 @@ export default function ExpensesScreen() {
               </Pressable>
               <ThemedText style={styles.periodText}>{weekLabel}</ThemedText>
               <Pressable
-                disabled
-                style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+                onPress={() => setWeekOffset((prev) => prev + 1)}
+                disabled={weekOffset >= 0}
+                style={({ pressed }) => [
+                  { opacity: pressed ? 0.7 : weekOffset >= 0 ? 0.3 : 1 },
+                ]}
               >
                 <MaterialIcons
                   name="chevron-right"
@@ -378,7 +506,10 @@ export default function ExpensesScreen() {
                 { backgroundColor: themeColors.surface },
               ]}
             >
-              <Pressable disabled>
+              <Pressable
+                onPress={() => setMonthOffset((prev) => prev - 1)}
+                style={({ pressed }) => [{ opacity: pressed ? 0.7 : 1 }]}
+              >
                 <MaterialIcons
                   name="chevron-left"
                   size={26}
@@ -386,7 +517,13 @@ export default function ExpensesScreen() {
                 />
               </Pressable>
               <ThemedText style={styles.periodText}>{monthLabel}</ThemedText>
-              <Pressable disabled>
+              <Pressable
+                onPress={() => setMonthOffset((prev) => prev + 1)}
+                disabled={monthOffset >= 0}
+                style={({ pressed }) => [
+                  { opacity: pressed ? 0.7 : monthOffset >= 0 ? 0.3 : 1 },
+                ]}
+              >
                 <MaterialIcons
                   name="chevron-right"
                   size={26}
@@ -407,10 +544,11 @@ export default function ExpensesScreen() {
                     Total Spending
                   </ThemedText>
                   <ThemedText style={styles.monthSummaryValue}>
-                    ₱ 23.00
+                    {formatCurrencyPHP(monthlyTotal)}
                   </ThemedText>
                   <ThemedText style={styles.monthSummarySub}>
-                    5 transactions
+                    {monthlyExpenses.length} transaction
+                    {monthlyExpenses.length !== 1 ? "s" : ""}
                   </ThemedText>
                 </View>
 
@@ -422,55 +560,73 @@ export default function ExpensesScreen() {
 
             <View style={styles.monthCatWrap}>
               <ThemedText style={styles.monthCatTitle}>By Category</ThemedText>
-              <View style={styles.monthCatList}>
-                {monthlyCategories.map((cat) => (
-                  <View
-                    key={cat.key}
+              {monthlyCategories.length === 0 ? (
+                <View
+                  style={[
+                    styles.emptyCard,
+                    { backgroundColor: themeColors.surface },
+                  ]}
+                >
+                  <ThemedText
                     style={[
-                      styles.monthCatRow,
-                      { backgroundColor: themeColors.surface },
+                      styles.emptyText,
+                      { color: themeColors.textSecondary },
                     ]}
                   >
-                    <View style={styles.monthCatLeft}>
-                      <View
-                        style={[
-                          styles.monthCatIcon,
-                          { backgroundColor: cat.bgColor },
-                        ]}
-                      >
-                        <Text style={styles.monthCatEmoji}>{cat.emoji}</Text>
+                    No expenses this month
+                  </ThemedText>
+                </View>
+              ) : (
+                <View style={styles.monthCatList}>
+                  {monthlyCategories.map((cat) => (
+                    <View
+                      key={cat.key}
+                      style={[
+                        styles.monthCatRow,
+                        { backgroundColor: themeColors.surface },
+                      ]}
+                    >
+                      <View style={styles.monthCatLeft}>
+                        <View
+                          style={[
+                            styles.monthCatIcon,
+                            { backgroundColor: cat.bgColor },
+                          ]}
+                        >
+                          <Text style={styles.monthCatEmoji}>{cat.emoji}</Text>
+                        </View>
+                        <View>
+                          <ThemedText style={styles.monthCatLabel}>
+                            {cat.label}
+                          </ThemedText>
+                          <ThemedText
+                            style={[
+                              styles.monthCatCount,
+                              { color: themeColors.textSecondary },
+                            ]}
+                          >
+                            {cat.countLabel}
+                          </ThemedText>
+                        </View>
                       </View>
-                      <View>
-                        <ThemedText style={styles.monthCatLabel}>
-                          {cat.label}
+
+                      <View style={styles.monthCatRight}>
+                        <ThemedText style={styles.monthCatAmount}>
+                          {cat.amountLabel}
                         </ThemedText>
                         <ThemedText
                           style={[
-                            styles.monthCatCount,
+                            styles.monthCatPct,
                             { color: themeColors.textSecondary },
                           ]}
                         >
-                          {cat.countLabel}
+                          {cat.pctLabel}
                         </ThemedText>
                       </View>
                     </View>
-
-                    <View style={styles.monthCatRight}>
-                      <ThemedText style={styles.monthCatAmount}>
-                        {cat.amountLabel}
-                      </ThemedText>
-                      <ThemedText
-                        style={[
-                          styles.monthCatPct,
-                          { color: themeColors.textSecondary },
-                        ]}
-                      >
-                        {cat.pctLabel}
-                      </ThemedText>
-                    </View>
-                  </View>
-                ))}
-              </View>
+                  ))}
+                </View>
+              )}
             </View>
           </>
         )}
@@ -483,23 +639,18 @@ function WeeklyExpenseRow({ item }: { item: ExpenseItem }) {
   const colorScheme = useColorScheme() ?? "light";
   const themeColors = Colors[colorScheme];
 
-  const bg = item.colorKey === "indigo" ? "#C7D2FE" : "#FBCFE8";
-
-  const chipBg = item.colorKey === "indigo" ? "#A5B4FC" : "#FCA5A5";
-  const chipText = item.colorKey === "indigo" ? "#312E81" : "#7F1D1D";
-
   return (
     <View style={[styles.weekItem, { backgroundColor: themeColors.surface }]}>
       <View style={styles.weekItemLeft}>
-        <View style={[styles.emojiBox, { backgroundColor: bg }]}>
+        <View style={[styles.emojiBox, { backgroundColor: item.bgColor }]}>
           <Text style={styles.emojiText}>{item.emoji}</Text>
         </View>
 
         <View>
           <ThemedText style={styles.weekTitle}>{item.title}</ThemedText>
           <View style={styles.weekMetaRow}>
-            <View style={[styles.chip, { backgroundColor: chipBg }]}>
-              <ThemedText style={[styles.chipText, { color: chipText }]}>
+            <View style={[styles.chip, { backgroundColor: item.chipBg }]}>
+              <ThemedText style={[styles.chipText, { color: item.chipText }]}>
                 {item.category}
               </ThemedText>
             </View>
@@ -517,18 +668,6 @@ function WeeklyExpenseRow({ item }: { item: ExpenseItem }) {
 
       <View style={styles.weekItemRight}>
         <ThemedText style={styles.weekAmount}>{item.amountLabel}</ThemedText>
-        <Pressable
-          disabled
-          style={({ pressed }) => [
-            { opacity: pressed ? 0.7 : 0.4, marginTop: 6 },
-          ]}
-        >
-          <MaterialIcons
-            name="delete"
-            size={16}
-            color={themeColors.textSecondary}
-          />
-        </Pressable>
       </View>
     </View>
   );

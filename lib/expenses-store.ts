@@ -5,6 +5,7 @@ export type ExpenseRow = {
   id: string;
   description: string;
   amount: number;
+  category_id?: string | null;
   category: string | null;
   created_at: string;
 };
@@ -29,11 +30,117 @@ let realtimeStarted = false;
 
 // When the optional `category` column doesn't exist yet, we still want the UI to
 // reflect what the user selected during this session (even across refreshes).
+//
+// NOTE: The preferred storage is `expenses.category_id` (FK -> categories.id).
+// These caches are only used as a best-effort UI fallback if the backend schema
+// is missing columns/relationships or if category lookup fails.
 const transientCategoryById = new Map<string, string>();
 
 // Persisted fallback for app reloads (used when the backend column is missing).
 const CATEGORY_CACHE_KEY = "gasto.expenseCategoryById.v1";
 let persistedCategoryById: Record<string, string> | null = null;
+
+type CategoryRow = { id: string; name: string };
+
+let detectedCategoryTable: "categories" | "category" | null = null;
+
+function isMissingTableError(message: string) {
+  const m = message.toLowerCase();
+  return (
+    m.includes("does not exist") ||
+    m.includes("relation") ||
+    m.includes("schema cache")
+  );
+}
+
+async function detectCategoryTableName() {
+  if (detectedCategoryTable) return detectedCategoryTable;
+
+  // Common names: `categories` (plural) or `category` (singular)
+  const candidates: Array<"categories" | "category"> = [
+    "categories",
+    "category",
+  ];
+
+  for (const table of candidates) {
+    const probe = await supabase.from(table).select("id").limit(1);
+    if (!probe.error) {
+      detectedCategoryTable = table;
+      return table;
+    }
+  }
+
+  // Default to plural; callers will surface the actual error.
+  detectedCategoryTable = "categories";
+  return detectedCategoryTable;
+}
+
+async function resolveCategoryIdByName(categoryName: string) {
+  const trimmed = categoryName.trim();
+  if (!trimmed) return { ok: true as const, id: null as string | null };
+
+  const table = await detectCategoryTableName();
+
+  // Try exact match first.
+  const exact = await supabase
+    .from(table)
+    .select("id, name")
+    .eq("name", trimmed)
+    .limit(1)
+    .maybeSingle();
+
+  if (exact.error) {
+    // If the table name is wrong, surface a clearer error.
+    if (isMissingTableError(exact.error.message)) {
+      return {
+        ok: false as const,
+        error:
+          "Category table not found in Supabase. Expected a `categories` or `category` table with columns (id, name).",
+      };
+    }
+    return { ok: false as const, error: exact.error.message };
+  }
+  if (exact.data?.id) return { ok: true as const, id: String(exact.data.id) };
+
+  // Fallback to case-insensitive match.
+  const ilike = await supabase
+    .from(table)
+    .select("id, name")
+    .ilike("name", trimmed)
+    .limit(1)
+    .maybeSingle();
+
+  if (ilike.error) return { ok: false as const, error: ilike.error.message };
+  if (ilike.data?.id) return { ok: true as const, id: String(ilike.data.id) };
+
+  return {
+    ok: false as const,
+    error:
+      "Selected category was not found in the database. Make sure the category names in Supabase match the app's category list.",
+  };
+}
+
+async function fetchCategoryNamesById(ids: string[]) {
+  const unique = Array.from(new Set(ids.map((x) => x.trim()).filter(Boolean)));
+  if (!unique.length)
+    return { ok: true as const, map: new Map<string, string>() };
+
+  const table = await detectCategoryTableName();
+  const res = await supabase.from(table).select("id, name").in("id", unique);
+
+  if (res.error) {
+    return { ok: false as const, error: res.error.message };
+  }
+
+  const map = new Map<string, string>();
+  for (const row of (res.data ?? []) as unknown as CategoryRow[]) {
+    const id = String(row.id);
+    const name = typeof row.name === "string" ? row.name : "";
+    if (id && name) map.set(id, name);
+  }
+
+  return { ok: true as const, map };
+}
 
 async function getPersistedCategoryMap() {
   if (persistedCategoryById) return persistedCategoryById;
@@ -150,14 +257,15 @@ export async function refreshExpenses() {
     lastError = null;
     const first = await supabase
       .from("expenses")
-      .select("id, description, amount, category, created_at")
+      .select("id, description, amount, category_id, created_at")
       .order("created_at", { ascending: false })
       .limit(250);
 
     if (first.error) {
-      // If the project hasn't added the optional `category` column yet,
-      // fallback to a select that doesn't reference it.
-      if (isMissingColumnError(first.error.message, "category")) {
+      // If the project hasn't added `category_id` yet, fallback to a select
+      // that doesn't reference it, and use the local cache as a best-effort UI
+      // fallback.
+      if (isMissingColumnError(first.error.message, "category_id")) {
         const existingCategoryById = new Map(
           expenseRows.map((r) => [String(r.id), r.category] as const)
         );
@@ -176,17 +284,14 @@ export async function refreshExpenses() {
 
         const rows = (fallback.data ?? []).map((r) => {
           const row = r as Omit<ExpenseRow, "category">;
-          const id = String(row.id);
+          const id = String((row as unknown as { id: string }).id);
           const existingCategory = existingCategoryById.get(id);
           const transientCategory = transientCategoryById.get(id);
           return {
-            ...row,
-            // If we previously inserted rows while the column was missing,
-            // preserve that in-memory category so the UI doesn't flip to
-            // "Uncategorized" due to a refresh/realtime event.
+            ...(row as unknown as Omit<ExpenseRow, "category">),
             category:
               existingCategory ?? transientCategory ?? persisted[id] ?? null,
-          };
+          } as ExpenseRow;
         });
         expenseRows = sortExpensesNewestFirst(rows as ExpenseRow[]);
       } else {
@@ -194,7 +299,37 @@ export async function refreshExpenses() {
         return { ok: false as const, error: first.error.message };
       }
     } else {
-      expenseRows = sortExpensesNewestFirst((first.data ?? []) as ExpenseRow[]);
+      const rowsRaw = (first.data ?? []) as Array<
+        Omit<ExpenseRow, "category"> & { category_id?: string | null }
+      >;
+
+      const categoryIds = rowsRaw
+        .map((r) => (r.category_id ? String(r.category_id) : ""))
+        .filter(Boolean);
+      const nameLookup = await fetchCategoryNamesById(categoryIds);
+
+      const persisted = await getPersistedCategoryMap();
+
+      expenseRows = sortExpensesNewestFirst(
+        rowsRaw.map((r) => {
+          const id = String(r.id);
+          const catId = r.category_id ? String(r.category_id) : null;
+
+          // Prefer DB lookup via category_id.
+          const fromDb =
+            catId && nameLookup.ok ? nameLookup.map.get(catId) : undefined;
+
+          // Fallback (only if lookup fails / categories table missing)
+          const transient = transientCategoryById.get(id);
+          const cached = persisted[id];
+
+          return {
+            ...(r as unknown as Omit<ExpenseRow, "category">),
+            category_id: catId,
+            category: fromDb ?? transient ?? cached ?? null,
+          } as ExpenseRow;
+        })
+      );
     }
 
     hydrated = true;
@@ -262,31 +397,41 @@ export async function addExpense(input: {
   const amount = Number.isFinite(input.amount) ? input.amount : 0;
   const categoryTrimmed = (input.category ?? "").trim();
 
+  let resolvedCategoryId: string | null = null;
+  if (categoryTrimmed) {
+    const resolved = await resolveCategoryIdByName(categoryTrimmed);
+    if (!resolved.ok) {
+      lastError = resolved.error;
+      return { ok: false as const, error: resolved.error };
+    }
+    resolvedCategoryId = resolved.id;
+  }
+
   const payload: {
     description: string;
     amount: number;
     user_id: string;
-    category?: string | null;
+    category_id?: string | null;
   } = {
     description,
     amount,
     user_id: user.id,
   };
-  // Category is optional for future ML auto-categorization.
+  // Store category FK when provided.
   // Omit the column when empty so inserts still succeed.
-  if (categoryTrimmed) payload.category = categoryTrimmed;
+  if (resolvedCategoryId) payload.category_id = resolvedCategoryId;
 
   // First try (with category if provided)
   let data: ExpenseRow | null = null;
   const first = await supabase
     .from("expenses")
     .insert(payload)
-    .select("id, description, amount, category, created_at")
+    .select("id, description, amount, category_id, created_at")
     .single();
 
   if (first.error) {
-    // If the optional category column isn't created yet, retry without it.
-    if (isMissingColumnError(first.error.message, "category")) {
+    // If the category_id column isn't created yet, retry without it.
+    if (isMissingColumnError(first.error.message, "category_id")) {
       const retryPayload = { description, amount, user_id: user.id };
       const retry = await supabase
         .from("expenses")
@@ -299,13 +444,12 @@ export async function addExpense(input: {
         return { ok: false as const, error: retry.error.message };
       }
 
-      data =
-        ({
-          ...(retry.data as unknown as Omit<ExpenseRow, "category">),
-          // Even if the backend column isn't available yet, keep the user's
-          // chosen category in-memory so the UI reflects what they selected.
-          category: categoryTrimmed ? categoryTrimmed : null,
-        } as ExpenseRow) ?? null;
+      data = {
+        ...(retry.data as unknown as Omit<ExpenseRow, "category">),
+        // Even if the backend column isn't available yet, keep the user's
+        // chosen category in-memory so the UI reflects what they selected.
+        category: categoryTrimmed ? categoryTrimmed : null,
+      } as ExpenseRow;
 
       if (data?.id && categoryTrimmed) {
         transientCategoryById.set(String(data.id), categoryTrimmed);
@@ -316,7 +460,16 @@ export async function addExpense(input: {
       return { ok: false as const, error: first.error.message };
     }
   } else {
-    data = (first.data as ExpenseRow) ?? null;
+    const row = first.data as unknown as Omit<ExpenseRow, "category"> & {
+      category_id?: string | null;
+    };
+    data = {
+      ...row,
+      category_id: row.category_id ? String(row.category_id) : null,
+      // We already know what the user selected; this is display-only.
+      // On refresh, we hydrate from categories table via category_id.
+      category: categoryTrimmed ? categoryTrimmed : null,
+    } as ExpenseRow;
   }
 
   // If a category was chosen but the backend didn't store/return it,

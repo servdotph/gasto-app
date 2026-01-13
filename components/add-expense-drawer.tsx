@@ -62,9 +62,7 @@ export function AddExpenseDrawer({ visible, onClose }: Props) {
      API BASE (Expo-safe)
   ============================ */
   const RAW_BASE =
-    process.env.EXPO_PUBLIC_BASE_API_ROUTE ??
-    process.env.BASE_API_ROUTE ??
-    "";
+    process.env.EXPO_PUBLIC_BASE_API_ROUTE ?? process.env.BASE_API_ROUTE ?? "";
 
   const BASE_API_ROUTE = useMemo(() => {
     if (!RAW_BASE) return "";
@@ -111,7 +109,7 @@ export function AddExpenseDrawer({ visible, onClose }: Props) {
      SUBMIT
   ============================ */
   async function onSubmit() {
-    console.log("submit")
+    console.log("submit");
     if (submitting) return;
 
     setError(null);
@@ -150,14 +148,13 @@ export function AddExpenseDrawer({ visible, onClose }: Props) {
       setSubmitting(false);
       close();
     }
-    
-    
+
     if (category.trim() !== "") {
-      console.log("category not non")
+      console.log("category not non");
       await finalize(category.trim() || null);
       return;
     }
-    
+
     // ML prediction
     try {
       const res = await fetch(`http://127.0.0.1:8000/predict`, {
@@ -173,7 +170,7 @@ export function AddExpenseDrawer({ visible, onClose }: Props) {
       const confidence = json?.confidence
         ? Math.round(json.confidence * 100)
         : null;
-      console.log(`${predicted} {json}`)
+      console.log(`${predicted} {json}`);
       if (predicted) {
         showAlert(
           "Predicted category",
@@ -231,7 +228,9 @@ export function AddExpenseDrawer({ visible, onClose }: Props) {
           <View style={styles.header}>
             <View style={styles.titleRow}>
               <MaterialIcons name="add" size={26} color={themeColors.text} />
-              <ThemedText style={styles.title}>Add Expense</ThemedText>
+              <ThemedText style={styles.title} numberOfLines={1}>
+                Add Expense
+              </ThemedText>
             </View>
             <Pressable onPress={close}>
               <MaterialIcons name="close" size={22} color={themeColors.text} />
@@ -267,7 +266,7 @@ export function AddExpenseDrawer({ visible, onClose }: Props) {
 
             {showCategoryList && (
               <View style={styles.dropdown}>
-                <ScrollView>
+                <ScrollView nestedScrollEnabled showsVerticalScrollIndicator>
                   <Pressable
                     style={styles.option}
                     onPress={() => {
@@ -299,12 +298,9 @@ export function AddExpenseDrawer({ visible, onClose }: Props) {
             <Pressable
               disabled={!canSubmit}
               onPress={onSubmit}
-              style={[
-                styles.submit,
-                { opacity: canSubmit ? 1 : 0.5 },
-              ]}
+              style={[styles.submit, { opacity: canSubmit ? 1 : 0.5 }]}
             >
-              <ThemedText style={styles.submitText}>
+              <ThemedText style={styles.submitText} numberOfLines={1}>
                 {submitting ? "Adding..." : "Add Expense"}
               </ThemedText>
             </Pressable>
@@ -317,16 +313,29 @@ export function AddExpenseDrawer({ visible, onClose }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, justifyContent: "flex-end" },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.3)" },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.3)",
+  },
   sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 },
-  header: { flexDirection: "row", justifyContent: "space-between" },
-  titleRow: { flexDirection: "row", gap: 8 },
-  title: { fontSize: 24, fontWeight: "900" },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexShrink: 0,
+  },
+  title: { fontSize: 24, fontWeight: "900", flexShrink: 0 },
   form: { gap: 12, paddingBottom: 40 },
   input: {
     borderWidth: 1,
     borderRadius: 10,
     padding: 10,
+    backgroundColor: "white",
   },
   select: {
     borderWidth: 1,
@@ -334,11 +343,14 @@ const styles = StyleSheet.create({
     padding: 10,
     flexDirection: "row",
     justifyContent: "space-between",
+    backgroundColor: "white",
   },
   dropdown: {
     maxHeight: 200,
     borderWidth: 1,
     borderRadius: 10,
+    backgroundColor: "white",
+    overflow: "hidden",
   },
   option: {
     padding: 12,
@@ -349,7 +361,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: "black",
     alignItems: "center",
+    justifyContent: "center",
   },
-  submitText: { color: "white", fontWeight: "900" },
+  submitText: { color: "white", fontWeight: "900", textAlign: "center" },
   error: { color: "red", fontWeight: "700" },
 });

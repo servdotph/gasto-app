@@ -14,6 +14,7 @@ import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
+import { getExpenseRows, subscribeAddedExpenses } from "@/lib/expenses-store";
 import { fetchProfileById, upsertProfileById } from "@/lib/profiles";
 import { supabase } from "@/lib/supabase";
 
@@ -49,6 +50,7 @@ export default function ProfileScreen() {
   });
 
   const [fullName, setFullName] = useState<string>("");
+  const [totalThisYear, setTotalThisYear] = useState<number>(0);
 
   useEffect(() => {
     let mounted = true;
@@ -176,7 +178,31 @@ export default function ProfileScreen() {
     }
   }
 
-  const totalThisMonth = "₱0.00";
+  // Calculate total expenses for this year
+  useEffect(() => {
+    function calculateYearlyTotal() {
+      const rows = getExpenseRows();
+      const currentYear = new Date().getFullYear();
+      const yearlyExpenses = rows.filter((expense) => {
+        const expenseDate = new Date(expense.created_at);
+        return expenseDate.getFullYear() === currentYear;
+      });
+      const total = yearlyExpenses.reduce(
+        (sum, expense) => sum + expense.amount,
+        0
+      );
+      setTotalThisYear(total);
+    }
+
+    calculateYearlyTotal();
+    const unsubscribe = subscribeAddedExpenses(calculateYearlyTotal);
+    return () => unsubscribe();
+  }, []);
+
+  const formattedYearlyTotal = `₱${totalThisYear.toLocaleString("en-PH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 
   async function onLogout() {
     try {
@@ -291,10 +317,10 @@ export default function ProfileScreen() {
                     { color: themeColors.textSecondary },
                   ]}
                 >
-                  Total This Month
+                  Total This Year
                 </ThemedText>
                 <ThemedText style={styles.totalValue}>
-                  {totalThisMonth}
+                  {formattedYearlyTotal}
                 </ThemedText>
               </View>
             </View>
