@@ -3,10 +3,7 @@ import { Link, useRouter } from "expo-router";
 import React, { useState } from "react";
 import { Alert, Pressable, StyleSheet, View } from "react-native";
 
-import {
-  AuthGoogleButton,
-  AuthPrimaryButton,
-} from "@/components/auth/auth-buttons";
+import { AuthPrimaryButton } from "@/components/auth/auth-buttons";
 import { AuthScreenShell } from "@/components/auth/auth-screen-shell";
 import { AuthTextField } from "@/components/auth/auth-text-field";
 import { ThemedText } from "@/components/themed-text";
@@ -63,7 +60,7 @@ export default function LoginScreen() {
         }
       }
 
-      router.replace("/profile");
+      router.replace("/dashboard");
     } finally {
       setIsSubmitting(false);
     }
@@ -145,20 +142,6 @@ export default function LoginScreen() {
         <AuthPrimaryButton
           label={isSubmitting ? "Logging in..." : "Login"}
           onPress={isSubmitting ? () => {} : onLogin}
-        />
-
-        <View style={styles.divider}>
-          <View style={[styles.dividerLine, { backgroundColor: divider }]} />
-          <ThemedText style={[styles.dividerLabel, { color: muted }]}>
-            OR
-          </ThemedText>
-          <View style={[styles.dividerLine, { backgroundColor: divider }]} />
-        </View>
-
-        <AuthGoogleButton
-          label="Google"
-          onPress={() => {}}
-          iconSource={require("@/assets/images/google.png")}
         />
 
         <View style={styles.footer}>

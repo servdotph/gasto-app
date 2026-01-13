@@ -2,10 +2,7 @@ import { Link, useRouter } from "expo-router";
 import React, { useState } from "react";
 import { Alert, StyleSheet, View } from "react-native";
 
-import {
-  AuthGoogleButton,
-  AuthPrimaryButton,
-} from "@/components/auth/auth-buttons";
+import { AuthPrimaryButton } from "@/components/auth/auth-buttons";
 import { AuthScreenShell } from "@/components/auth/auth-screen-shell";
 import { AuthTextField } from "@/components/auth/auth-text-field";
 import { ThemedText } from "@/components/themed-text";
@@ -72,7 +69,7 @@ export default function SignupScreen() {
           Alert.alert("Profile save failed", e?.message ?? String(e));
         }
 
-        router.replace("/profile");
+        router.replace("/dashboard");
         return;
       }
 
@@ -172,18 +169,6 @@ export default function SignupScreen() {
         <AuthPrimaryButton
           label={isSubmitting ? "Registering..." : "Register"}
           onPress={isSubmitting ? () => {} : onSignup}
-        />
-
-        <View style={styles.orRow}>
-          <View style={styles.orLine} />
-          <ThemedText style={[styles.orLabel, { color: muted }]}>OR</ThemedText>
-          <View style={styles.orLine} />
-        </View>
-
-        <AuthGoogleButton
-          label="Google"
-          onPress={() => {}}
-          iconSource={require("@/assets/images/google.png")}
         />
 
         <View style={styles.footer}>

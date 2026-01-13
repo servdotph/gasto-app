@@ -5,10 +5,10 @@ import { View } from "react-native";
 import { SplashOverlay } from "@/components/splash-overlay";
 import { supabase } from "@/lib/supabase";
 
+import DashboardScreen from "../(tabs)/dashboard";
 import LandingScreen from "../landing";
-import ProfileScreen from "../profile";
 
-type TargetRoute = "/landing" | "/profile";
+type TargetRoute = "/landing" | "/dashboard";
 
 export default function SplashScreen() {
   const router = useRouter();
@@ -22,7 +22,7 @@ export default function SplashScreen() {
       try {
         const { data } = await supabase.auth.getSession();
         if (!mounted) return;
-        setTarget(data.session ? "/profile" : "/landing");
+        setTarget(data.session ? "/dashboard" : "/landing");
       } catch {
         if (!mounted) return;
         setTarget("/landing");
@@ -52,7 +52,7 @@ export default function SplashScreen() {
   const reveal = useMemo(() => {
     // Render the real destination screen underneath the splash.
     // This makes the reveal animation feel seamless.
-    if (target === "/profile") return <ProfileScreen />;
+    if (target === "/dashboard") return <DashboardScreen />;
     // Default to landing while we resolve target.
     return <LandingScreen />;
   }, [target]);

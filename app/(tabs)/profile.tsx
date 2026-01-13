@@ -9,7 +9,7 @@ import {
   View,
 } from "react-native";
 
-import { BOTTOM_NAVBAR_HEIGHT, BottomNavbar } from "@/components/bottom-navbar";
+import { BOTTOM_NAVBAR_HEIGHT } from "@/components/bottom-navbar";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { Colors } from "@/constants/theme";
@@ -390,8 +390,6 @@ export default function ProfileScreen() {
           </>
         )}
       </ScrollView>
-
-      <BottomNavbar />
     </ThemedView>
   );
 }
