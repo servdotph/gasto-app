@@ -2,18 +2,31 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { Redirect } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  LayoutAnimation,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   TextInput,
+  UIManager,
   View,
 } from "react-native";
 
 import { BOTTOM_NAVBAR_HEIGHT } from "@/components/bottom-navbar";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
+import { EXPENSE_CATEGORIES } from "@/constants/expense-categories";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
+import {
+  deleteExpense,
+  formatCurrencyPHP,
+  formatShortDate,
+  getExpenseRows,
+  refreshExpenses,
+  subscribeAddedExpenses,
+  type ExpenseRow,
+} from "@/lib/expenses-store";
 import { fetchProfileById } from "@/lib/profiles";
 import { supabase } from "@/lib/supabase";
 
@@ -24,13 +37,7 @@ type DashboardState = {
   name: string;
 };
 
-type RecentExpense = {
-  id: string;
-  title: string;
-  category: "Travel" | "Shopping";
-  dateLabel: string;
-  amountLabel: string;
-};
+type CategoryFilter = "ALL" | (typeof EXPENSE_CATEGORIES)[number];
 
 export default function DashboardScreen() {
   const colorScheme = useColorScheme() ?? "light";
@@ -44,6 +51,28 @@ export default function DashboardScreen() {
   });
 
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("ALL");
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
+
+  const [expenseRows, setExpenseRows] = useState<ExpenseRow[]>([]);
+  const [expensesLoading, setExpensesLoading] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS === "android") {
+      // Enable LayoutAnimation on Android.
+      if (UIManager.setLayoutAnimationEnabledExperimental) {
+        UIManager.setLayoutAnimationEnabledExperimental(true);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    setExpenseRows(getExpenseRows());
+    return subscribeAddedExpenses(() => {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setExpenseRows(getExpenseRows());
+    });
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -99,32 +128,86 @@ export default function DashboardScreen() {
     return trimmed.split(/\s+/)[0] ?? trimmed;
   }, [state.name]);
 
-  const recent: RecentExpense[] = useMemo(
-    () => [
-      {
-        id: "1",
-        title: "Picnic",
-        category: "Travel",
-        dateLabel: "Jan 4",
-        amountLabel: "₱23.00",
-      },
-      {
-        id: "2",
-        title: "Clothes",
-        category: "Shopping",
-        dateLabel: "Jan 4",
-        amountLabel: "₱23.00",
-      },
-      {
-        id: "3",
-        title: "T-shirt",
-        category: "Shopping",
-        dateLabel: "Jan 4",
-        amountLabel: "₱23.00",
-      },
-    ],
-    []
-  );
+  useEffect(() => {
+    let mounted = true;
+    async function loadExpenses() {
+      if (!state.isAuthed) return;
+      setExpensesLoading(true);
+      try {
+        await refreshExpenses();
+      } finally {
+        if (mounted) setExpensesLoading(false);
+      }
+    }
+
+    void loadExpenses();
+    return () => {
+      mounted = false;
+    };
+  }, [state.isAuthed]);
+
+  const searchNormalized = useMemo(() => search.trim().toLowerCase(), [search]);
+
+  const filteredRecent = useMemo(() => {
+    const byCategory =
+      categoryFilter === "ALL"
+        ? expenseRows
+        : expenseRows.filter((e) => e.category === categoryFilter);
+
+    if (!searchNormalized) return byCategory;
+    return byCategory.filter((e) => {
+      const d = e.description.toLowerCase();
+      const c = (e.category ?? "").toLowerCase();
+      return d.includes(searchNormalized) || c.includes(searchNormalized);
+    });
+  }, [categoryFilter, expenseRows, searchNormalized]);
+
+  const todayTotal = useMemo(() => {
+    const todayKey = dateKeyLocal(new Date());
+    return expenseRows
+      .filter((e) => dateKeyLocal(parseISOTimestampLocal(e.created_at)) === todayKey)
+      .reduce((sum, e) => sum + (Number.isFinite(e.amount) ? e.amount : 0), 0);
+  }, [expenseRows]);
+
+  const weekTotal = useMemo(() => {
+    const start = startOfWeekLocal(new Date(), 1);
+    const end = endOfDayLocal(new Date());
+    return expenseRows
+      .filter((e) => {
+        const d = startOfDayLocal(parseISOTimestampLocal(e.created_at));
+        return d >= start && d <= end;
+      })
+      .reduce((sum, e) => sum + (Number.isFinite(e.amount) ? e.amount : 0), 0);
+  }, [expenseRows]);
+
+  const weekCategoryStats = useMemo(() => {
+    const start = startOfWeekLocal(new Date(), 1);
+    const end = endOfDayLocal(new Date());
+
+    const inWeek = expenseRows.filter((e) => {
+      const d = startOfDayLocal(parseISOTimestampLocal(e.created_at));
+      return d >= start && d <= end;
+    });
+
+    const totals = new Map<string, number>();
+    let total = 0;
+    for (const e of inWeek) {
+      const amt = Number.isFinite(e.amount) ? e.amount : 0;
+      total += amt;
+      const cat = normalizeCategoryLabel(e.category);
+      totals.set(cat, (totals.get(cat) ?? 0) + amt);
+    }
+
+    const rows = [...totals.entries()]
+      .map(([category, amount]) => ({
+        category,
+        amount,
+        share: total > 0 ? amount / total : 0,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+
+    return { total, rows };
+  }, [expenseRows]);
 
   if (!state.loading && !state.isAuthed && !state.error) {
     return <Redirect href="/landing" />;
@@ -179,8 +262,10 @@ export default function DashboardScreen() {
                     { backgroundColor: themeColors.primary },
                   ]}
                 >
-                  <ThemedText style={styles.totalLabel}>This Week</ThemedText>
-                  <ThemedText style={styles.totalValue}>₱ 12.3</ThemedText>
+                  <ThemedText style={styles.totalLabel}>Today</ThemedText>
+                  <ThemedText style={styles.totalValue}>
+                    {formatCurrencyPHP(todayTotal)}
+                  </ThemedText>
                 </View>
                 <View
                   style={[
@@ -189,9 +274,18 @@ export default function DashboardScreen() {
                   ]}
                 >
                   <ThemedText style={styles.totalLabel}>This Week</ThemedText>
-                  <ThemedText style={styles.totalValue}>₱ 120.23</ThemedText>
+                  <ThemedText style={styles.totalValue}>
+                    {formatCurrencyPHP(weekTotal)}
+                  </ThemedText>
                 </View>
               </View>
+              {expensesLoading ? (
+                <ThemedText
+                  style={[styles.bodyText, { marginTop: 10, opacity: 0.7 }]}
+                >
+                  Syncing expenses...
+                </ThemedText>
+              ) : null}
             </View>
 
             <View style={styles.section}>
@@ -213,25 +307,23 @@ export default function DashboardScreen() {
                   </ThemedText>
                 </View>
 
-                <CategoryRow
-                  icon="flight"
-                  iconColor="#60A5FA"
-                  label="Travel"
-                  amount="₱23.00"
-                  fillColor="#818CF8"
-                  fillPct={0.7}
-                  theme={themeColors}
-                />
-
-                <CategoryRow
-                  icon="shopping-bag"
-                  iconColor="#EC4899"
-                  label="Shopping"
-                  amount="₱3.00"
-                  fillColor="#F87171"
-                  fillPct={0.3}
-                  theme={themeColors}
-                />
+                {weekCategoryStats.rows.length === 0 ? (
+                  <ThemedText
+                    style={[styles.bodyText, { color: themeColors.textSecondary }]}
+                  >
+                    No expenses yet this week.
+                  </ThemedText>
+                ) : (
+                  weekCategoryStats.rows.map((row) => (
+                    <CategoryRow
+                      key={row.category}
+                      label={row.category}
+                      amount={formatCurrencyPHP(row.amount)}
+                      fillPct={row.share}
+                      theme={themeColors}
+                    />
+                  ))
+                )}
               </View>
             </View>
 
@@ -291,7 +383,7 @@ export default function DashboardScreen() {
                 </View>
 
                 <Pressable
-                  disabled
+                  onPress={() => setCategoryPickerOpen(true)}
                   style={({ pressed }) => [
                     styles.filterButton,
                     {
@@ -312,7 +404,7 @@ export default function DashboardScreen() {
                     style={{ transform: [{ rotate: "-45deg" }] }}
                   />
                   <ThemedText style={styles.filterText}>
-                    All Categories
+                    {categoryFilter === "ALL" ? "All Categories" : categoryFilter}
                   </ThemedText>
                   <MaterialIcons
                     name="expand-more"
@@ -323,40 +415,55 @@ export default function DashboardScreen() {
               </View>
 
               <View style={styles.recentList}>
-                {recent.map((item) => (
-                  <RecentExpenseRow key={item.id} item={item} />
-                ))}
+                {filteredRecent.length === 0 ? (
+                  <ThemedText
+                    style={[styles.bodyText, { color: themeColors.textSecondary }]}
+                  >
+                    No matching expenses.
+                  </ThemedText>
+                ) : (
+                  filteredRecent.map((item) => (
+                    <RecentExpenseRow key={item.id} item={item} />
+                  ))
+                )}
               </View>
             </View>
           </>
         )}
       </ScrollView>
+
+      {categoryPickerOpen ? (
+        <CategoryFilterModal
+          theme={themeColors}
+          value={categoryFilter}
+          onClose={() => setCategoryPickerOpen(false)}
+          onChange={(next) => {
+            setCategoryFilter(next);
+            setCategoryPickerOpen(false);
+          }}
+        />
+      ) : null}
     </ThemedView>
   );
 }
 
 function CategoryRow({
-  icon,
-  iconColor,
   label,
   amount,
-  fillColor,
   fillPct,
   theme,
 }: {
-  icon: React.ComponentProps<typeof MaterialIcons>["name"];
-  iconColor: string;
   label: string;
   amount: string;
-  fillColor: string;
   fillPct: number;
   theme: typeof Colors.light;
 }) {
+  const accent = getCategoryAccent(label);
   return (
     <View style={styles.catBlock}>
       <View style={styles.catTopRow}>
         <View style={styles.catLeft}>
-          <MaterialIcons name={icon} size={14} color={iconColor} />
+          <MaterialIcons name={accent.icon} size={14} color={accent.iconColor} />
           <ThemedText style={[styles.catLabel, { color: theme.textSecondary }]}>
             {label}
           </ThemedText>
@@ -374,7 +481,7 @@ function CategoryRow({
           style={[
             styles.progressFill,
             {
-              backgroundColor: fillColor,
+              backgroundColor: accent.fillColor,
               width: `${Math.round(fillPct * 100)}%`,
             },
           ]}
@@ -384,73 +491,53 @@ function CategoryRow({
   );
 }
 
-function RecentExpenseRow({ item }: { item: RecentExpense }) {
+function RecentExpenseRow({ item }: { item: ExpenseRow }) {
   const colorScheme = useColorScheme() ?? "light";
   const themeColors = Colors[colorScheme];
 
-  const icon = item.category === "Travel" ? "flight" : "shopping-bag";
-  const bg =
-    item.category === "Travel"
-      ? colorScheme === "dark"
-        ? "rgba(99,102,241,0.2)"
-        : "#E0E7FF"
-      : colorScheme === "dark"
-      ? "rgba(239,68,68,0.2)"
-      : "#FEE2E2";
-  const fg =
-    item.category === "Travel"
-      ? colorScheme === "dark"
-        ? "#C7D2FE"
-        : "#6366F1"
-      : colorScheme === "dark"
-      ? "#FECACA"
-      : "#EF4444";
+  const categoryLabel = normalizeCategoryLabel(item.category);
+  const accent = getCategoryAccent(categoryLabel);
 
-  const chipBg =
-    item.category === "Travel"
-      ? colorScheme === "dark"
-        ? "#312E81"
-        : "#C7D2FE"
-      : colorScheme === "dark"
-      ? "#7F1D1D"
-      : "#FECACA";
+  const bg =
+    colorScheme === "dark" ? accent.darkBg : accent.lightBg;
+  const fg = colorScheme === "dark" ? accent.darkFg : accent.lightFg;
+  const chipBg = colorScheme === "dark" ? accent.chipDarkBg : accent.chipLightBg;
   const chipText =
-    item.category === "Travel"
-      ? colorScheme === "dark"
-        ? "#E0E7FF"
-        : "#3730A3"
-      : colorScheme === "dark"
-      ? "#FEE2E2"
-      : "#7F1D1D";
+    colorScheme === "dark" ? accent.chipDarkText : accent.chipLightText;
 
   return (
     <View style={[styles.recentRow, { backgroundColor: themeColors.surface }]}>
       <View style={styles.recentLeft}>
         <View style={[styles.recentIconWrap, { backgroundColor: bg }]}>
-          <MaterialIcons name={icon} size={20} color={fg} />
+          <MaterialIcons name={accent.icon} size={20} color={fg} />
         </View>
 
         <View>
-          <ThemedText style={styles.recentTitle}>{item.title}</ThemedText>
+          <ThemedText style={styles.recentTitle}>{item.description}</ThemedText>
           <View style={styles.recentMetaRow}>
             <View style={[styles.chip, { backgroundColor: chipBg }]}>
               <ThemedText style={[styles.chipText, { color: chipText }]}>
-                {item.category}
+                {categoryLabel}
               </ThemedText>
             </View>
             <ThemedText
               style={[styles.metaText, { color: themeColors.textSecondary }]}
             >
-              {item.dateLabel}
+              {formatShortDate(parseISOTimestampLocal(item.created_at))}
             </ThemedText>
           </View>
         </View>
       </View>
 
       <View style={styles.recentRight}>
-        <ThemedText style={styles.recentAmount}>{item.amountLabel}</ThemedText>
+        <ThemedText style={styles.recentAmount}>
+          {formatCurrencyPHP(item.amount)}
+        </ThemedText>
         <Pressable
-          disabled
+          onPress={() => {
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            void deleteExpense(item.id);
+          }}
           style={({ pressed }) => [
             { opacity: pressed ? 0.7 : 0.4, marginTop: 6 },
           ]}
@@ -464,6 +551,179 @@ function RecentExpenseRow({ item }: { item: RecentExpense }) {
       </View>
     </View>
   );
+}
+
+function CategoryFilterModal({
+  theme,
+  value,
+  onClose,
+  onChange,
+}: {
+  theme: typeof Colors.light;
+  value: CategoryFilter;
+  onClose: () => void;
+  onChange: (next: CategoryFilter) => void;
+}) {
+  return (
+    <View style={styles.modalOverlay}>
+      <Pressable style={styles.modalBackdrop} onPress={onClose} />
+      <View style={[styles.modalSheet, { backgroundColor: theme.surface }]}>
+        <View style={styles.modalHeaderRow}>
+          <ThemedText style={styles.modalTitle}>Filter Category</ThemedText>
+          <Pressable onPress={onClose} hitSlop={10}>
+            <MaterialIcons name="close" size={18} color={theme.textSecondary} />
+          </Pressable>
+        </View>
+
+        <Pressable
+          onPress={() => onChange("ALL")}
+          style={({ pressed }) => [
+            styles.modalItem,
+            {
+              backgroundColor:
+                value === "ALL"
+                  ? theme.primary
+                  : pressed
+                  ? theme.inputBackground
+                  : "transparent",
+            },
+          ]}
+        >
+          <ThemedText style={styles.modalItemText}>All Categories</ThemedText>
+        </Pressable>
+
+        {EXPENSE_CATEGORIES.map((c) => (
+          <Pressable
+            key={c}
+            onPress={() => onChange(c)}
+            style={({ pressed }) => [
+              styles.modalItem,
+              {
+                backgroundColor:
+                  value === c
+                    ? theme.primary
+                    : pressed
+                    ? theme.inputBackground
+                    : "transparent",
+              },
+            ]}
+          >
+            <ThemedText style={styles.modalItemText}>{c}</ThemedText>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function parseISOTimestampLocal(input: string) {
+  const parsed = new Date(input);
+  return Number.isFinite(parsed.getTime()) ? parsed : new Date();
+}
+
+function normalizeCategoryLabel(category: string | null) {
+  const trimmed = (category ?? "").trim();
+  return trimmed ? trimmed : "Uncategorized";
+}
+
+function dateKeyLocal(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate()
+  ).padStart(2, "0")}`;
+}
+
+function startOfDayLocal(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function endOfDayLocal(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+}
+
+function startOfWeekLocal(date: Date, weekStartsOn: 0 | 1) {
+  // weekStartsOn: 0 = Sunday, 1 = Monday
+  const d = startOfDayLocal(date);
+  const day = d.getDay();
+  const diff = (day - weekStartsOn + 7) % 7;
+  d.setDate(d.getDate() - diff);
+  return d;
+}
+
+function getCategoryAccent(category: string) {
+  const key = category.trim().toLowerCase();
+  if (key === "travel") {
+    return {
+      icon: "flight" as const,
+      iconColor: "#60A5FA",
+      fillColor: "#818CF8",
+      lightBg: "#E0E7FF",
+      lightFg: "#6366F1",
+      darkBg: "rgba(99,102,241,0.2)",
+      darkFg: "#C7D2FE",
+      chipLightBg: "#C7D2FE",
+      chipLightText: "#3730A3",
+      chipDarkBg: "#312E81",
+      chipDarkText: "#E0E7FF",
+    };
+  }
+  if (key === "shopping") {
+    return {
+      icon: "shopping-bag" as const,
+      iconColor: "#EC4899",
+      fillColor: "#F87171",
+      lightBg: "#FEE2E2",
+      lightFg: "#EF4444",
+      darkBg: "rgba(239,68,68,0.2)",
+      darkFg: "#FECACA",
+      chipLightBg: "#FECACA",
+      chipLightText: "#7F1D1D",
+      chipDarkBg: "#7F1D1D",
+      chipDarkText: "#FEE2E2",
+    };
+  }
+  if (key === "food" || key === "groceries") {
+    return {
+      icon: "restaurant" as const,
+      iconColor: "#F59E0B",
+      fillColor: "#F59E0B",
+      lightBg: "#FEF3C7",
+      lightFg: "#D97706",
+      darkBg: "rgba(245,158,11,0.2)",
+      darkFg: "#FCD34D",
+      chipLightBg: "#FDE68A",
+      chipLightText: "#92400E",
+      chipDarkBg: "#78350F",
+      chipDarkText: "#FEF3C7",
+    };
+  }
+  if (key === "bills") {
+    return {
+      icon: "receipt" as const,
+      iconColor: "#10B981",
+      fillColor: "#10B981",
+      lightBg: "#D1FAE5",
+      lightFg: "#059669",
+      darkBg: "rgba(16,185,129,0.2)",
+      darkFg: "#A7F3D0",
+      chipLightBg: "#A7F3D0",
+      chipLightText: "#065F46",
+      chipDarkBg: "#064E3B",
+      chipDarkText: "#D1FAE5",
+    };
+  }
+  return {
+    icon: "label" as const,
+    iconColor: "#94A3B8",
+    fillColor: "#94A3B8",
+    lightBg: "#E5E7EB",
+    lightFg: "#475569",
+    darkBg: "rgba(148,163,184,0.18)",
+    darkFg: "#CBD5E1",
+    chipLightBg: "#E5E7EB",
+    chipLightText: "#334155",
+    chipDarkBg: "#334155",
+    chipDarkText: "#E2E8F0",
+  };
 }
 
 const styles = StyleSheet.create({
@@ -690,5 +950,41 @@ const styles = StyleSheet.create({
   recentAmount: {
     fontSize: 14,
     fontWeight: "900",
+  },
+  modalOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "flex-end",
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.25)",
+  },
+  modalSheet: {
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 20,
+  },
+  modalHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  modalItem: {
+    height: 44,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 8,
+  },
+  modalItemText: {
+    fontSize: 14,
+    fontWeight: "800",
   },
 });
