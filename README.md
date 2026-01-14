@@ -1,50 +1,127 @@
-# Welcome to your Expo app 👋
+# Gasto App 💸📊
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+**Gasto** is a cross-platform expense tracking application built using **React Native with Expo**.  
+It allows users to record, organize, and analyze their personal spending in a simple and intuitive way.
 
-## Get started
+The goal of Gasto is to help users understand where their money goes and develop better financial habits through clear summaries and categorized expense tracking.
 
-1. Install dependencies
+---
 
-   ```bash
-   npm install
-   ```
+## 🚀 What the App Does
 
-2. Start the app
+Gasto helps users:
 
-   ```bash
-   npx expo start
-   ```
+- Track daily expenses and income
+- Categorize transactions (Food, Transport, Bills, etc.)
+- View total spending over time
+- Analyze spending behavior using summaries
+- Manage personal finances directly on their mobile device
 
-In the output, you'll find options to open the app in a
+---
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## 🧠 How Gasto Works
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+1. User opens the app
+2. Adds an expense or income
+3. Selects a category and enters an amount
+4. Transactions are stored locally
+5. Dashboard shows spending summaries
 
-## Get a fresh project
+---
 
-When you're ready, run:
+## 📱 Platforms Supported
 
-```bash
-npm run reset-project
-```
+- Android
+- iOS
+- Web (via Expo)
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+---
 
-## Learn more
+## 📦 Features
 
-To learn more about developing your project with Expo, look at the following resources:
+- Add expenses and income
+- Categorized transactions
+- Expense history list
+- Total spending overview
+- Clean and user-friendly UI
+- Cross-platform support with Expo
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+---
 
-## Join the community
+## 🗂 Project Structure
 
-Join our community of developers creating universal apps.
+app/ – Main application screens  
+assets/ – Images, icons, and fonts  
+components/ – Reusable UI components  
+constants/ – App-wide constants  
+hooks/ – Custom React hooks  
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+---
+
+## 🛠️ Technologies Used
+
+- React Native
+- Expo
+- TypeScript
+- JavaScript
+- Node.js
+
+---
+
+## ⚙️ Getting Started
+
+### Prerequisites
+
+- Node.js (v14+)
+- npm or yarn
+- Expo CLI
+
+Install Expo CLI:
+
+npm install -g expo-cli
+
+---
+
+### Clone the Repository
+
+git clone https://github.com/servdotph/gasto-app.git  
+cd gasto-app
+
+---
+
+### Install Dependencies
+
+npm install  
+or  
+yarn install
+
+---
+
+### Run the App
+
+npx expo start
+
+Scan the QR code using Expo Go or run on an emulator.
+
+---
+
+## 🛡️ Data & Privacy
+
+All data is stored locally on the user’s device unless cloud features are added.
+
+---
+
+## 🚧 Future Improvements
+
+- User authentication
+- Cloud sync
+- Analytics and charts
+- Export reports
+
+---
+
+## 👨‍💻 Author
+
+servdotph
+
+If you find this project helpful, please give it a ⭐ on GitHub!
