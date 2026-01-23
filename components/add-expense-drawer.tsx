@@ -157,7 +157,7 @@ export function AddExpenseDrawer({ visible, onClose }: Props) {
 
     // ML prediction
     try {
-      const res = await fetch(`http://172.20.10.3:8000/predict`, {
+      const res = await fetch(`http://10.239.103.142:8000/predict`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: desc }),
